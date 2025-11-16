@@ -1,0 +1,2 @@
+# ONNX removido - não usado mais
+# *.onnx filter=lfs diff=lfs merge=lfs -text
