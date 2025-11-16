@@ -1,6 +1,7 @@
 """
 Benchmark de vetorização para validação de performance em CI.
-Objetivo: garantir que o método vetorizado seja mais rápido que o antigo.
+Objetivo: garantir que o método vetorizado seja consistentemente
+mais rápido que o método baseado em apply.
 """
 
 import time
@@ -12,7 +13,16 @@ TARGET_SPEEDUP = 1.02
 
 
 def make_data(n_rows: int = 200_000) -> pd.DataFrame:
-    base = ["1.234,56", "2,3", "R$ 4,50", "7.890,12", "0,99", "-123,45", "R$ -6,70"]
+    """Gera dados sintéticos com formatos típicos BR."""
+    base = [
+        "1.234,56",
+        "2,3",
+        "R$ 4,50",
+        "7.890,12",
+        "0,99",
+        "-123,45",
+        "R$ -6,70",
+    ]
     data = (base * ((n_rows // len(base)) + 1))[:n_rows]
     return pd.DataFrame({"val": data})
 
@@ -37,23 +47,27 @@ def old_method(series: pd.Series) -> pd.Series:
 def new_method(series: pd.Series) -> pd.Series:
     """Método vetorizado usando operações de string do pandas."""
     s = series.astype(str)
-    s = s.str.replace(r"[^\d,.\-]", "", regex=True)  # limpa em uma passada
-    s = s.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)  # milhar/vírgula
+    # Limpa caracteres indesejados em uma passada
+    s = s.str.replace(r"[^\d,.\-]", "", regex=True)
+    # Remove ponto de milhar e troca vírgula por ponto
+    s = s.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
     return pd.to_numeric(s, errors="coerce")
 
 
 def bench(fn, series, repeat: int = 5) -> float:
+    """Roda a função `repeat` vezes e retorna o menor tempo."""
     times = []
     for _ in range(repeat):
         t0 = time.perf_counter()
         fn(series)
         times.append(time.perf_counter() - t0)
-    return min(times)  # menor tempo para reduzir ruído
+    return min(times)
 
 
-def main():
+def main() -> None:
     df = make_data()
-    new_method(df["val"])  # warm-up
+    # Warm-up do método novo para evitar efeitos de primeira execução
+    new_method(df["val"])
 
     old_t = bench(old_method, df["val"])
     new_t = bench(new_method, df["val"])
@@ -61,13 +75,17 @@ def main():
 
     print(f"Old time: {old_t:.4f}s | New time: {new_t:.4f}s | Speedup: {speedup:.2f}x")
 
-    # Garante que o método novo é mais rápido
-    assert new_t < old_t, f"Método novo está mais lento ({new_t:.4f}s vs {old_t:.4f}s)"
+    # 1) Garantia forte: método novo PRECISA ser mais rápido
+    assert new_t < old_t, (
+        f"Método novo está mais lento ou igual "
+        f"({new_t:.4f}s vs {old_t:.4f}s)"
+    )
 
-    # Garante um ganho mínimo configurável
-    assert (
-        speedup >= TARGET_SPEEDUP
-    ), f"Speedup {speedup:.2f}x abaixo da meta {TARGET_SPEEDUP:.2f}x"
+    # 2) Garantia de ganho mínimo configurável
+    assert speedup >= TARGET_SPEEDUP, (
+        f"Speedup {speedup:.2f}x abaixo da meta "
+        f"{TARGET_SPEEDUP:.2f}x"
+    )
 
     print("✅ Performance benchmarks passed")
 
