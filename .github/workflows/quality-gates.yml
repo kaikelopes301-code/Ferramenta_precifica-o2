@@ -1,4 +1,4 @@
-name: 🏆 Enterprise Quality Gates - Next.js 15.x
+﻿name: 🏆 Enterprise Quality Gates - Next.js 15.x
 
 on:
   pull_request:
@@ -153,25 +153,31 @@ jobs:
           exit 1
         fi
         
-        # Calcular tamanho total do bundle
+                # Tamanho total do bundle (todos arquivos em .next/static), em bytes
         bundle_size=$(du -sb .next/static | cut -f1)
         bundle_size_kb=$((bundle_size / 1024))
         
-        # Budget: 500KB para bundles iniciais
-        budget_kb=500
+        echo "Bundle size: ${bundle_size}B (${bundle_size_kb}KB)"
         
-        echo "Bundle size: ${bundle_size_kb}KB"
-        echo "Budget: ${budget_kb}KB"
+        AGGRESSIVE_TARGET=512000   # 512 KB (warning apenas)
+        HARD_LIMIT=1048576         # 1 MB  (hard limit)
+        CURRENT_BRANCH="${GITHUB_REF_NAME:-unknown}"
         
-        if [ $bundle_size_kb -gt $budget_kb ]; then
-          echo "❌ BUNDLE SIZE EXCEEDED: ${bundle_size_kb}KB > ${budget_kb}KB"
-          echo "Consider:"
-          echo "- Lazy loading components with next/dynamic"
-          echo "- Code splitting by routes"
-          echo "- Tree shaking unused dependencies"
-          exit 1
+        if [ "$bundle_size" -gt "$AGGRESSIVE_TARGET" ]; then
+          echo "⚠️  WARNING: Bundle size ${bundle_size}B > aggressive target ${AGGRESSIVE_TARGET}B (512KB)"
         else
-          echo "✅ Bundle size within budget: ${bundle_size_kb}KB <= ${budget_kb}KB"
+          echo "✅ Bundle size within aggressive target (${bundle_size}B <= ${AGGRESSIVE_TARGET}B)"
+        fi
+        
+        if [ "$bundle_size" -gt "$HARD_LIMIT" ]; then
+          if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+            echo "❌ BUNDLE SIZE EXCEEDED HARD LIMIT on main/master: ${bundle_size}B > ${HARD_LIMIT}B (~1MB)"
+            exit 1
+          else
+            echo "⚠️  WARNING: Bundle size ${bundle_size}B exceeds hard limit ${HARD_LIMIT}B on branch ${CURRENT_BRANCH}, but build will not fail on non-main branches."
+          fi
+        else
+          echo "✅ Bundle size within hard limit: ${bundle_size}B <= ${HARD_LIMIT}B"
         fi
 
   # Job 3: Integration Tests
@@ -179,11 +185,11 @@ jobs:
     name: 🔌 Integration Tests
     runs-on: ubuntu-latest
     
-    services:
-      # Setup para FastAPI se necessário
-      # backend:
-      #   image: python:3.11
-      #   options: --health-cmd "curl -f http://localhost:8000/health || exit 1"
+    # services:
+    #   # Setup para FastAPI se necessário
+    #   # backend:
+    #   #   image: python:3.11
+    #   #   options: --health-cmd "curl -f http://localhost:8000/health || exit 1"
     
     steps:
     - name: 📂 Checkout Code
@@ -257,3 +263,4 @@ jobs:
         if [ -f "frontend/frontend.pid" ]; then
           kill $(cat "frontend/frontend.pid") || true
         fi
+

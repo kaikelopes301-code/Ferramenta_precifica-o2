@@ -428,6 +428,21 @@ class KitItem(BaseModel):
     qty: int = 1
     extra: Optional[Dict[str, Any]] = None
 
+class CartExportItem(BaseModel):
+    id: str
+    name: str
+    price: Optional[float] = None
+    qty: int = 1
+    notes: Optional[str] = None
+    vidaUtilMeses: Optional[float] = None
+    manutencaoPercent: Optional[float] = None
+    fornecedor: Optional[str] = None
+    marca: Optional[str] = None
+    descricao: Optional[str] = None
+
+class CartExportRequest(BaseModel):
+    items: List[CartExportItem]
+
 # Utility functions from dashboard
 def pick_group_col(df: pd.DataFrame) -> str:
     for c in ['descricao_padronizada', 'descricao_saneada']:
@@ -1981,6 +1996,54 @@ async def gerar_orcamento(request: Request):
         total += subtotal
         itens.append({"item": r.get('item_name'), "price": price, "qty": qty, "subtotal": round(subtotal,2)})
     return {"itens": itens, "total": round(total, 2)}
+
+@app.post("/cart/export")
+async def exportar_carrinho_excel(payload: CartExportRequest, request: Request):
+    """Exporta um carrinho enviado pelo frontend em formato Excel (.xlsx)."""
+    uid = _get_user_id(request)
+    items = payload.items or []
+    if not items:
+        raise HTTPException(status_code=400, detail="Carrinho vazio")
+
+    data_rows: list[dict[str, Any]] = []
+    total = 0.0
+
+    for it in items:
+        price = float(it.price or 0)
+        qty = max(1, int(it.qty or 1))
+        subtotal = price * qty
+        total += subtotal
+        data_rows.append(
+            {
+                "Descrição (Usuário)": it.descricao or "",
+                "Sugestão": it.name,
+                "Quantidade": qty,
+                "Vida útil (meses)": it.vidaUtilMeses,
+                "Preço Unit. (R$)": round(price, 2) if price else None,
+                "Manutenção (%)": it.manutencaoPercent,
+                "Fornecedor": it.fornecedor,
+                "Marca": it.marca,
+                "Notas": it.notes or "",
+                "Subtotal (R$)": round(subtotal, 2),
+            }
+        )
+
+    df = pd.DataFrame(data_rows)
+    df_total = pd.DataFrame([{"Sugestão": "TOTAL", "Subtotal (R$)": round(total, 2)}])
+    df = pd.concat([df, df_total], ignore_index=True)
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Carrinho")
+    buffer.seek(0)
+
+    filename = f"carrinho_{uid}_{pd.Timestamp.utcnow().date().isoformat()}.xlsx"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 @app.get("/kit/export")
 async def exportar_kit_excel(request: Request):
