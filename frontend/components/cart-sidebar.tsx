@@ -43,17 +43,6 @@ export function CartSidebar({ items, onChangeQty, onChangeNotes, onRemove, onCle
     } catch {}
   }
 
-  const loadDraft = () => {
-    try {
-      const raw = localStorage.getItem("cartDraft")
-      if (!raw) return
-      const data = JSON.parse(raw)
-      if (Array.isArray(data)) {
-        alert("Rascunho carregado. Para aplicar, integre a ação no container do carrinho.")
-      }
-    } catch {}
-  }
-
   const exportExcel = async () => {
     try {
       const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000") + "/cart/export"
@@ -77,7 +66,8 @@ export function CartSidebar({ items, onChangeQty, onChangeNotes, onRemove, onCle
       a.download = "carrinho.xlsx"
       a.click()
       URL.revokeObjectURL(url)
-    } catch (e) {
+    } catch (error) {
+      console.error("Falhou exportação de Excel; usando CSV fallback", error)
       const headers = ["Item", "Quantidade", "Preço Unitário", "Subtotal", "Observações"]
       const lines = items.map((it) =>
         [

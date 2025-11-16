@@ -42,39 +42,7 @@ jobs:
       - name: Pandas Performance Benchmarks
         run: |
           cd scripts
-          python -c "
-          import sys
-          sys.path.insert(0, '../src')
-
-          import pandas as pd
-          import time
-
-          df = pd.DataFrame({'val': ['1,5', '2.3', 'R$ 4,50'] * 1000})
-
-          def old_method(series):
-              return series.apply(lambda x: float(str(x).replace('R$','').replace(',','.')) if str(x).replace('R$','').replace(',','').replace('.','').isdigit() else None)
-
-          def new_method(series):
-              s = series.astype(str).str.replace(r'[R$\\s]', '', regex=True).str.replace(',', '.')
-              return pd.to_numeric(s, errors='coerce')
-
-          start = time.perf_counter()
-          old_result = old_method(df['val'])
-          old_time = time.perf_counter() - start
-
-          start = time.perf_counter()
-          new_result = new_method(df['val'])
-          new_time = time.perf_counter() - start
-
-          speedup = old_time / new_time
-          print(f'Vectorization speedup: {speedup:.2f}x')
-          print(f'Old time: {old_time:.3f}s, New time: {new_time:.3f}s')
-
-          assert speedup >= 2.0, f'Speedup {speedup:.2f}x below target 2.0x'
-          assert new_time < 0.050, f'New method too slow: {new_time:.3f}s'
-
-          print('Pandas performance benchmarks passed')
-          "
+          python vector_benchmark.py
 
       - name: Upload Python Audit Report
         uses: actions/upload-artifact@v4

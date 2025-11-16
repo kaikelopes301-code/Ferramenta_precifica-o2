@@ -80,14 +80,18 @@ export function SearchInput({ onSearch, isLoading }: SearchInputProps) {
       // Se usuário começou a digitar, interrompe
       if (value.trim().length > 0) {
         setTypedPlaceholder(placeholderFull)
-        typingTimerRef.current && window.clearTimeout(typingTimerRef.current)
-        typingTimerRef.current = null
+        if (typingTimerRef.current) {
+          window.clearTimeout(typingTimerRef.current)
+          typingTimerRef.current = null
+        }
         return
       }
       const i = typingIndexRef.current
       if (i >= placeholderFull.length) {
-        typingTimerRef.current && window.clearTimeout(typingTimerRef.current)
-        typingTimerRef.current = null
+        if (typingTimerRef.current) {
+          window.clearTimeout(typingTimerRef.current)
+          typingTimerRef.current = null
+        }
         return
       }
       setTypedPlaceholder(placeholderFull.slice(0, i + 1))

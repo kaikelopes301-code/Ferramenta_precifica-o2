@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Download, ShoppingCart, Trash2, X, Plus, Minus, Pencil, Check, Copy, FileSpreadsheet } from "lucide-react"
+import { ShoppingCart, Trash2, X, Plus, Minus, Pencil, Check, Copy, FileSpreadsheet } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 export type CartItem = {
@@ -148,7 +148,8 @@ export function CartWidget({ items, onClear, onRemove, onChangeQty, onChangeNote
 
       toast({ title: "✔ Exportado com sucesso", description: "Arquivo Resultados.xlsx gerado." })
       return
-    } catch (e) {
+    } catch (error) {
+      console.error("Erro ao exportar Excel, gerando CSV fallback", error)
       // Fallback para CSV caso o Excel falhe (ou backend esteja indisponível)
       try {
         const headers = [

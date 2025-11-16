@@ -77,6 +77,250 @@ semantic_cache = SemanticIndexCache(model_name=DEFAULT_MODEL_NAME)
 reranker = CrossEncoderReranker()
 attr_cache: dict = {}
 
+
+# Helpers para busca em lote
+class BatchContext:
+    def __init__(self, df: pd.DataFrame, gcol: str, target_cols: list[str],
+                 semantic_index: Any, item_attrs: Any, corpus_hash: str, top_k_req: int):
+        self.df = df
+        self.gcol = gcol
+        self.target_cols = target_cols
+        self.semantic_index = semantic_index
+        self.item_attrs = item_attrs
+        self.corpus_hash = corpus_hash
+        self.top_k_req = top_k_req
+
+
+def _prepare_batch_context(batch: BatchQuery) -> BatchContext | None:
+    try:
+        df = load_excel()
+    except Exception:
+        return None
+
+    gcol = pick_group_col(df)
+    target_cols = [c for c in ["descricao_padronizada", "descricao_saneada", "descricao"] if c in df.columns]
+    if not target_cols:
+        return None
+
+    semantic_index = build_cached_semantic_index(df, target_cols)
+    item_attrs = build_cached_attributes(df, target_cols)
+    corpus_texts = df[target_cols].astype(str).fillna("").agg(" ".join, axis=1).tolist()
+    corpus_hash = semantic_cache.build_key(corpus_texts)
+    top_k_req = int(max(1, min(10, int(batch.top_k or DEFAULT_TOP_K))))
+    return BatchContext(df, gcol, target_cols, semantic_index, item_attrs, corpus_hash, top_k_req)
+
+
+def _determine_rerank_candidates(batch_size: int) -> int:
+    if batch_size <= 20:
+        return SEMANTIC_CANDIDATES
+    if batch_size <= 50:
+        return 75
+    if batch_size <= 100:
+        return 50
+    return 30
+
+
+def _collect_candidates(batch: BatchQuery, ctx: BatchContext, rerank_candidates: int):
+    all_query_candidates = []
+    query_candidate_mapping = []
+    cached_queries = {}
+    queries_needing_processing = []
+
+    for query_idx, q in enumerate(batch.descricoes):
+        if not q or not q.strip():
+            query_candidate_mapping.append((q, []))
+            continue
+
+        cached_result = _json_query_cache.get(q, ctx.corpus_hash, ctx.top_k_req)
+        if cached_result:
+            cached_queries[query_idx] = cached_result
+            query_candidate_mapping.append((q, []))
+            continue
+
+        queries_needing_processing.append(query_idx)
+        raw_candidates = ctx.semantic_index.search(q, top_k=SEMANTIC_CANDIDATES)
+
+        if not raw_candidates:
+            query_candidate_mapping.append((q, []))
+            continue
+
+        candidates_to_rerank = raw_candidates[:rerank_candidates]
+        query_candidate_mapping.append((q, raw_candidates))
+
+        cand_texts = [
+            " ".join([str(ctx.df.iloc[idx][c]) for c in ctx.target_cols if c in ctx.df.columns])
+            for idx, _ in candidates_to_rerank
+        ]
+        for cand_text in cand_texts:
+            all_query_candidates.append((query_idx, q, cand_text))
+
+    return all_query_candidates, query_candidate_mapping, cached_queries, queries_needing_processing
+
+
+def _run_reranker(all_query_candidates):
+    reranker_results = {}
+    query_groups = {}
+    for query_idx, q, cand_text in all_query_candidates:
+        if query_idx not in query_groups:
+            query_groups[query_idx] = (q, [])
+        query_groups[query_idx][1].append(cand_text)
+
+    for query_idx, (query_text, candidate_texts) in query_groups.items():
+        try:
+            raw_scores = reranker.score(query_text, candidate_texts)
+            normalized_scores = reranker.normalize(raw_scores)
+            reranker_results[query_idx] = normalized_scores
+        except Exception:
+            reranker_results[query_idx] = [0.0] * len(candidate_texts)
+    return reranker_results
+
+
+def _build_rows_from_candidates(batch: BatchQuery, ctx: BatchContext, query_candidate_mapping,
+                                reranker_results, item_attrs, top_k_req):
+    rows = []
+    for query_idx, (q, raw_candidates) in enumerate(query_candidate_mapping):
+        if not raw_candidates:
+            continue
+        try:
+            rer_scores_partial = reranker_results.get(query_idx, [])
+            rer_scores = rer_scores_partial + [0.0] * (len(raw_candidates) - len(rer_scores_partial))
+            query_attrs = extract_all_attributes(q)
+
+            n_cands = len(raw_candidates)
+            sem_scores = np.array([float(sc) for _, sc in raw_candidates], dtype=np.float32)
+            rer_scores_arr = np.array(rer_scores[:n_cands], dtype=np.float32)
+
+            num_boosts = np.zeros(n_cands, dtype=np.float32)
+            for pos, (idx, _) in enumerate(raw_candidates):
+                try:
+                    num_boosts[pos] = float(numeric_boost(query_attrs, item_attrs[idx]))
+                except Exception:
+                    num_boosts[pos] = 0.0
+
+            final_scores = (
+                SCORE_WEIGHT_EMBEDDING * sem_scores +
+                SCORE_WEIGHT_RERANKER * rer_scores_arr +
+                SCORE_WEIGHT_NUMERIC * num_boosts
+            )
+
+            equipment_scores: Dict[str, Tuple[float, int]] = {}
+            for pos, (idx, _) in enumerate(raw_candidates):
+                try:
+                    gname = str(ctx.df.iloc[idx][ctx.gcol]).strip()
+                except Exception:
+                    gname = ""
+                if not gname:
+                    continue
+                score = float(final_scores[pos])
+                if gname not in equipment_scores or score > equipment_scores[gname][0]:
+                    equipment_scores[gname] = (score, idx)
+
+            if not equipment_scores:
+                continue
+
+            sorted_equipment = sorted(equipment_scores.items(), key=lambda x: x[1][0], reverse=True)
+            max_score = sorted_equipment[0][1][0] if sorted_equipment else 1.0
+
+            for gname, (score_val, _) in sorted_equipment[:top_k_req]:
+                confidence = round(100.0 * score_val / max_score, 2)
+                if confidence < MIN_CONFIDENCE:
+                    continue
+
+                equipment_rows = ctx.df[ctx.df[ctx.gcol] == gname]
+                if equipment_rows.empty:
+                    continue
+
+                valor_unitario = None
+                if "valor_unitario" in equipment_rows.columns:
+                    try:
+                        valores = pd.to_numeric(equipment_rows["valor_unitario"], errors="coerce").dropna()
+                        if len(valores) > 0:
+                            p25, p75 = valores.quantile([0.25, 0.75])
+                            trimmed = valores[(valores >= p25) & (valores <= p75)]
+                            if len(trimmed) > 0:
+                                valor_unitario = float(trimmed.mean())
+                    except Exception:
+                        pass
+
+                vida_util_meses = None
+                if "vida_util_meses" in equipment_rows.columns:
+                    try:
+                        vidas = pd.to_numeric(equipment_rows["vida_util_meses"], errors="coerce").dropna()
+                        if len(vidas) > 0:
+                            vida_util_meses = float(vidas.value_counts().idxmax())
+                    except Exception:
+                        pass
+
+                manutencao_percent = None
+                if "manutencao" in equipment_rows.columns:
+                    try:
+                        manuts = pd.to_numeric(equipment_rows["manutencao"], errors="coerce")
+                        manuts = manuts[(manuts.notna()) & (manuts > 0)]
+                        if len(manuts) > 0:
+                            m = float(manuts.mean())
+                            if m <= 1.0:
+                                m = m * 100.0
+                            manutencao_percent = m
+                    except Exception:
+                        pass
+
+                rows.append({
+                    "query_original": q,
+                    "sugeridos": gname,
+                    "score": confidence,
+                    "valor_unitario": valor_unitario,
+                    "vida_util_meses": vida_util_meses,
+                    "manutencao_percent": manutencao_percent,
+                    "marca": None,
+                    "link_detalhes": f"/detalhes?grupo={quote(str(gname))}"
+                })
+        except Exception as e:
+            print(f"⚠️ Erro ao processar query {query_idx} ('{q[:50]}...'): {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    return rows
+
+
+def _persist_cache_and_history(batch: BatchQuery, rows, queries_needing_processing,
+                               cached_queries, corpus_hash, top_k_req, request: Request,
+                               background_tasks: BackgroundTasks):
+    def _save_to_cache():
+        try:
+            for query_idx in queries_needing_processing:
+                q = batch.descricoes[query_idx]
+                query_results = [r for r in rows if r.get("query_original") == q]
+                if query_results:
+                    cache_obj = {
+                        "query_original": q,
+                        "query_normalizada": normalize_equip(q),
+                        "consonant_key": consonant_key(q),
+                        "expansoes_detectadas": expansion_variants_for_query(q),
+                        "modelo_semantico": DEFAULT_MODEL_NAME,
+                        "modelo_reranker": DEFAULT_RERANKER_MODEL,
+                        "resultados": query_results,
+                        "total": len(query_results)
+                    }
+                    _json_query_cache.set(q, corpus_hash, top_k_req, cache_obj)
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar cache JSON: {e}")
+
+    def _log_batch():
+        try:
+            uid = _get_user_id(request)
+            context_tags = None
+            with engine.begin() as conn:
+                for qdesc in batch.descricoes:
+                    cnt = sum(1 for r in rows if (r.get("query_original") == qdesc and r.get("sugeridos")))
+                    conn.execute(text(
+                        "INSERT INTO search_history (user_id, query, context_tags, results_count) VALUES (:u,:q,:t,:n)"
+                    ), {"u": uid, "q": qdesc, "t": _to_csv(context_tags), "n": cnt})
+        except Exception:
+            pass
+
+    background_tasks.add_task(_save_to_cache)
+    background_tasks.add_task(_log_batch)
+
 # 🚀 Quick Win Part 2: Cache LRU para resultados de busca inteligente
 # Substitui o cache manual por LRU mais eficiente
 from collections import OrderedDict
@@ -559,7 +803,7 @@ def prepare_search_context(df: pd.DataFrame, q: Query) -> SearchContext:
     gcol = pick_group_col(df)
     target_cols = [c for c in ['descricao_padronizada','descricao_saneada','descricao'] if c in df.columns]
     if not target_cols:
-        raise HTTPException(status_code=400, detail="Colunas de descrição não encontradas")
+        return {\"resultados\": [], \"total\": 0}
     
     semantic_index = build_cached_semantic_index(df, target_cols)
     item_attrs = build_cached_attributes(df, target_cols)
@@ -1343,13 +1587,13 @@ async def buscar_inteligente(q: Query, request: Request, response: Response, bac
     try:
         df = load_excel()
     except Exception:
-        raise HTTPException(status_code=400, detail="Planilha não encontrada. Faça upload primeiro.")
+        return {"resultados": [], "total": 0, "detail": "Planilha não encontrada. Faça upload primeiro."}
     
     # Preparação rápida (sem modelos pesados ainda)
     gcol = pick_group_col(df)
     target_cols = [c for c in ['descricao_padronizada','descricao_saneada','descricao'] if c in df.columns]
     if not target_cols:
-        raise HTTPException(status_code=400, detail="Colunas de descrição não encontradas")
+        return {"resultados": [], "total": 0}
     
     q_norm = normalize_equip(q.descricao)
     top_k_req = int(max(1, min(10, int(q.top_k or DEFAULT_TOP_K))))
@@ -1501,318 +1745,44 @@ async def _fallback_tfidf_search(q: Query, df: pd.DataFrame, gcol: str, target_c
 
 @app.post("/buscar-lote-inteligente")
 async def buscar_lote_inteligente(batch: BatchQuery, request: Request, response: Response, background_tasks: BackgroundTasks):
-    """🔄 Versão em lote do buscador inteligente - UNIFICADA (Stage 4).
-
-    Usa a mesma função _execute_smart_search() do endpoint individual para garantir
-    consistência total de resultados, nomenclatura e comportamento.
-    
-    Entrada: { descricoes: [str], top_k?: int }
-    Saída: lista achatada com campo 'query_original' para identificar cada query.
-    """
-    try:
-        df = load_excel()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Planilha não encontrada. Faça upload primeiro.")
-
-    gcol = pick_group_col(df)
-    target_cols = [c for c in ['descricao_padronizada','descricao_saneada','descricao'] if c in df.columns]
-    if not target_cols:
+    """Versao em lote do buscador inteligente com cache e reranking otimizados."""
+    t0 = time.perf_counter()
+    ctx = _prepare_batch_context(batch)
+    if ctx is None:
         return {"resultados": [], "total": 0}
 
-    # Preparar recursos compartilhados (cache otimizado)
-    semantic_index = build_cached_semantic_index(df, target_cols)
-    item_attrs = build_cached_attributes(df, target_cols)
-    
-    # 💾 Gerar hash do corpus para cache JSON
-    corpus_texts = df[target_cols].astype(str).fillna('').agg(' '.join, axis=1).tolist()
-    corpus_hash = semantic_cache.build_key(corpus_texts)
-    
-    rows = []
-    t0 = time.perf_counter()
-    top_k_req = int(max(1, min(10, int(batch.top_k or DEFAULT_TOP_K))))
-    
-    # OTIMIZAÇÃO DINÂMICA: Reduzir candidatos para reranker em lotes muito grandes
-    # Isso mantém performance aceitável sem sacrificar qualidade
     batch_size = len(batch.descricoes)
-    
-    if batch_size <= 20:
-        rerank_candidates = SEMANTIC_CANDIDATES  # 150 para precisão máxima
-    elif batch_size <= 50:
-        rerank_candidates = 75  # Reduzir pela metade
-    elif batch_size <= 100:
-        rerank_candidates = 50  # 1/3 dos candidatos
-    else:
-        rerank_candidates = 30  # Para lotes gigantes (100+)
-    
-    print(f"🔄 Processando lote de {batch_size} queries (reranking top-{rerank_candidates} por query)")
-    
-    # OTIMIZAÇÃO: Pré-processar todas as queries de uma vez para o reranker
-    # Isso evita carregar o modelo múltiplas vezes
-    all_query_candidates = []
-    query_candidate_mapping = []  # Mapeamento de query -> seus candidatos
-    cached_queries = {}  # query_idx -> cached results
-    queries_needing_processing = []  # Queries que não estão em cache
-    
-    # 💾 VERIFICAR CACHE JSON PARA CADA QUERY
-    print(f"💾 Verificando cache JSON para {batch_size} queries...")
-    for query_idx, q in enumerate(batch.descricoes):
-        if not q or not q.strip():
-            query_candidate_mapping.append((q, []))
-            continue
-        
-        # Tentar buscar no cache JSON primeiro
-        cached_result = _json_query_cache.get(q, corpus_hash, top_k_req)
-        if cached_result:
-            # Cache HIT - armazenar resultado e pular processamento
-            cached_queries[query_idx] = cached_result
-            query_candidate_mapping.append((q, []))  # Vazio pois já tem cache
-            continue
-        
-        # Cache MISS - precisa processar
-        queries_needing_processing.append(query_idx)
-        
-        # Busca semântica (rápida) - mas pegando mais candidatos inicialmente
-        raw_candidates = semantic_index.search(q, top_k=SEMANTIC_CANDIDATES)
-        
-        if not raw_candidates:
-            query_candidate_mapping.append((q, []))
-            continue
-        
-        # FILTRAR para enviar apenas top-N para reranking (otimização para lotes grandes)
-        candidates_to_rerank = raw_candidates[:rerank_candidates]
-        
-        # Armazenar candidatos COMPLETOS (para scoring depois)
-        query_candidate_mapping.append((q, raw_candidates))
-        
-        # Mas enviar apenas subset para reranking
-        cand_texts = [
-            ' '.join([str(df.iloc[idx][c]) for c in target_cols if c in df.columns])
-            for idx, _ in candidates_to_rerank
-        ]
-        
-        # Adicionar ao batch de reranking com índice da query
-        for cand_text in cand_texts:
-            all_query_candidates.append((query_idx, q, cand_text))
-    
-    # 💾 LOG de estatísticas do cache
+    rerank_candidates = _determine_rerank_candidates(batch_size)
+    print(f"Processando lote de {batch_size} queries (reranking top-{rerank_candidates} por query)")
+
+    all_query_candidates, query_candidate_mapping, cached_queries, queries_needing_processing = _collect_candidates(
+        batch, ctx, rerank_candidates
+    )
+
     cache_hits = len(cached_queries)
     cache_misses = len(queries_needing_processing)
-    print(f"💾 Cache: {cache_hits} hits, {cache_misses} misses ({cache_hits}/{batch_size} = {cache_hits/batch_size*100:.1f}%)")
-    
-    # RERANKING EM LOTE (query por query, mas com batch processing interno)
-    reranker_results = {}  # query_idx -> [scores]
-    
-    # Agrupar candidatos por query para reranking eficiente
-    query_groups = {}  # query_idx -> (query_text, [candidate_texts])
-    for query_idx, q, cand_text in all_query_candidates:
-        if query_idx not in query_groups:
-            query_groups[query_idx] = (q, [])
-        query_groups[query_idx][1].append(cand_text)
-    
-    # Executar reranking para cada query
-    for query_idx, (query_text, candidate_texts) in query_groups.items():
-        try:
-            # Chamar reranker.score corretamente: (query, candidates)
-            raw_scores = reranker.score(query_text, candidate_texts)
-            normalized_scores = reranker.normalize(raw_scores)
-            reranker_results[query_idx] = normalized_scores
-        except Exception as e:
-            print(f"⚠️ Erro no reranking para query {query_idx}: {e}")
-            # Fallback: scores zero
-            reranker_results[query_idx] = [0.0] * len(candidate_texts)
-    
-    # Processar cada query com seus scores pré-calculados
-    for query_idx, (q, raw_candidates) in enumerate(query_candidate_mapping):
-        if not raw_candidates:
-            continue
-        
-        try:
-            # Usar scores do reranking em lote (apenas para os primeiros N candidatos)
-            rer_scores_partial = reranker_results.get(query_idx, [])
-            
-            # Expandir scores para todos os candidatos (scores=0 para não re-rankeados)
-            rer_scores = rer_scores_partial + [0.0] * (len(raw_candidates) - len(rer_scores_partial))
-            
-            # Continuar com o pipeline normal (rápido)
-            query_attrs = extract_all_attributes(q)
-            
-            n_cands = len(raw_candidates)
-            sem_scores = np.array([float(sc) for _, sc in raw_candidates], dtype=np.float32)
-            rer_scores_arr = np.array(rer_scores[:n_cands], dtype=np.float32)
-            
-            num_boosts = np.zeros(n_cands, dtype=np.float32)
-            for pos, (idx, _) in enumerate(raw_candidates):
-                try:
-                    num_boosts[pos] = float(numeric_boost(query_attrs, item_attrs[idx]))
-                except Exception:
-                    num_boosts[pos] = 0.0
-            
-            final_scores = (
-                SCORE_WEIGHT_EMBEDDING * sem_scores +
-                SCORE_WEIGHT_RERANKER * rer_scores_arr +
-                SCORE_WEIGHT_NUMERIC * num_boosts
-            )
-            
-            # Agregação por equipamento
-            equipment_scores: Dict[str, Tuple[float, int]] = {}
-            
-            for pos, (idx, _) in enumerate(raw_candidates):
-                try:
-                    gname = str(df.iloc[idx][gcol]).strip()
-                except Exception:
-                    gname = ''
-                
-                if not gname:
-                    continue
-                
-                score = float(final_scores[pos])
-                
-                if gname not in equipment_scores or score > equipment_scores[gname][0]:
-                    equipment_scores[gname] = (score, idx)
-            
-            if not equipment_scores:
-                continue
-            
-            sorted_equipment = sorted(
-                equipment_scores.items(),
-                key=lambda x: x[1][0],
-                reverse=True
-            )
-            
-            max_score = sorted_equipment[0][1][0] if sorted_equipment else 1.0
-            
-            # Construir resultados
-            for gname, (score_val, _) in sorted_equipment[:top_k_req]:
-                confidence = round(100.0 * score_val / max_score, 2)
-                
-                if confidence < MIN_CONFIDENCE:
-                    continue
-                
-                equipment_rows = df[df[gcol] == gname]
-                
-                if equipment_rows.empty:
-                    continue
-                
-                # Agregações
-                valor_unitario = None
-                if 'valor_unitario' in equipment_rows.columns:
-                    try:
-                        valores = pd.to_numeric(equipment_rows['valor_unitario'], errors='coerce').dropna()
-                        if len(valores) > 0:
-                            p25, p75 = valores.quantile([0.25, 0.75])
-                            trimmed = valores[(valores >= p25) & (valores <= p75)]
-                            if len(trimmed) > 0:
-                                valor_unitario = float(trimmed.mean())
-                    except Exception:
-                        pass
-                
-                vida_util_meses = None
-                if 'vida_util_meses' in equipment_rows.columns:
-                    try:
-                        vidas = pd.to_numeric(equipment_rows['vida_util_meses'], errors='coerce').dropna()
-                        if len(vidas) > 0:
-                            vida_util_meses = float(vidas.value_counts().idxmax())
-                    except Exception:
-                        pass
-                
-                manutencao_percent = None
-                if 'manutencao' in equipment_rows.columns:
-                    try:
-                        manuts = pd.to_numeric(equipment_rows['manutencao'], errors='coerce')
-                        manuts = manuts[(manuts.notna()) & (manuts > 0)]
-                        if len(manuts) > 0:
-                            m = float(manuts.mean())
-                            if m <= 1.0:
-                                m = m * 100.0
-                            manutencao_percent = m
-                    except Exception:
-                        pass
-                
-                rows.append({
-                    'query_original': q,
-                    'sugeridos': gname,
-                    'score': confidence,
-                    'valor_unitario': valor_unitario,
-                    'vida_util_meses': vida_util_meses,
-                    'manutencao_percent': manutencao_percent,
-                    'marca': None,
-                    'link_detalhes': f"/detalhes?grupo={quote(str(gname))}"
-                })
-        
-        except Exception as e:
-            # Log do erro mas continua processando outras queries
-            print(f"❌ Erro ao processar query {query_idx} ('{q[:50]}...'): {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            continue
-    
-    # 💾 ADICIONAR RESULTADOS DO CACHE JSON
+    print(f"Cache: {cache_hits} hits, {cache_misses} misses ({cache_hits}/{batch_size} = {cache_hits/batch_size*100:.1f}%)")
+
+    reranker_results = _run_reranker(all_query_candidates)
+    rows = _build_rows_from_candidates(batch, ctx, query_candidate_mapping, reranker_results, ctx.item_attrs, ctx.top_k_req)
+
     for query_idx, cached_result in cached_queries.items():
-        if cached_result and 'resultados' in cached_result:
-            for resultado in cached_result['resultados']:
-                # Adicionar query_original se não existir
-                if 'query_original' not in resultado:
-                    resultado['query_original'] = batch.descricoes[query_idx]
+        if cached_result and "resultados" in cached_result:
+            for resultado in cached_result["resultados"]:
+                resultado.setdefault("query_original", batch.descricoes[query_idx])
                 rows.append(resultado)
-    
-    # 💾 SALVAR NOVOS RESULTADOS NO CACHE JSON (em background)
-    def _save_to_cache():
-        try:
-            # Agrupar resultados por query para salvar no cache
-            for query_idx in queries_needing_processing:
-                q = batch.descricoes[query_idx]
-                query_results = [r for r in rows if r.get('query_original') == q]
-                
-                if query_results:
-                    # Montar objeto de resposta compatível com cache individual
-                    cache_obj = {
-                        'query_original': q,
-                        'query_normalizada': normalize_equip(q),
-                        'consonant_key': consonant_key(q),
-                        'expansoes_detectadas': expansion_variants_for_query(q),
-                        'modelo_semantico': DEFAULT_MODEL_NAME,
-                        'modelo_reranker': DEFAULT_RERANKER_MODEL,
-                        'resultados': query_results,
-                        'total': len(query_results)
-                    }
-                    _json_query_cache.set(q, corpus_hash, top_k_req, cache_obj)
-        except Exception as e:
-            print(f"⚠️ Erro ao salvar cache JSON: {e}")
-    
-    # Executar salvamento em background
-    background_tasks.add_task(_save_to_cache)
-    
+
+    _persist_cache_and_history(
+        batch, rows, queries_needing_processing, cached_queries, ctx.corpus_hash, ctx.top_k_req, request, background_tasks
+    )
+
     dt_ms = (time.perf_counter() - t0) * 1000.0
     response.headers["Server-Timing"] = f"batch-search;dur={dt_ms:.1f}"
-    
-    # Adicionar header indicando quantas queries vieram do cache
-    cache_hits = len(cached_queries)
+    cache_hits_hdr = len(cached_queries)
     total_queries = len(batch.descricoes)
-    if cache_hits > 0:
-        response.headers["X-Cache-Stats"] = f"{cache_hits}/{total_queries} from cache"
-    
-    # Log do histórico por descrição em background
-    try:
-        uid = _get_user_id(request)
-        # CORRIGIDO: Não tentar ler request.json() novamente - o body já foi consumido pelo FastAPI
-        # context_tags seria passado via batch.context_tags se necessário (não implementado no modelo atual)
-        context_tags = None
-        
-        def _log_batch():
-            try:
-                with engine.begin() as conn:
-                    for qdesc in batch.descricoes:
-                        # Usar 'sugeridos' (nomenclatura padronizada)
-                        cnt = sum(1 for r in rows if (r.get('query_original') == qdesc and r.get('sugeridos')))
-                        conn.execute(text(
-                            "INSERT INTO search_history (user_id, query, context_tags, results_count) VALUES (:u,:q,:t,:n)"
-                        ), {"u": uid, "q": qdesc, "t": _to_csv(context_tags), "n": cnt})
-            except Exception:
-                pass
-        background_tasks.add_task(_log_batch)
-    except Exception:
-        pass
-    
+    if cache_hits_hdr > 0:
+        response.headers["X-Cache-Stats"] = f"{cache_hits_hdr}/{total_queries} from cache"
+
     return {"resultados": rows, "total": len(rows)}
 
 @app.post("/feedback")
