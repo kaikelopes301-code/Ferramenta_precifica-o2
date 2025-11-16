@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, BackgroundTasks, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -803,7 +806,7 @@ def prepare_search_context(df: pd.DataFrame, q: Query) -> SearchContext:
     gcol = pick_group_col(df)
     target_cols = [c for c in ['descricao_padronizada','descricao_saneada','descricao'] if c in df.columns]
     if not target_cols:
-        return {\"resultados\": [], \"total\": 0}
+        return {"resultados": [], "total": 0}
     
     semantic_index = build_cached_semantic_index(df, target_cols)
     item_attrs = build_cached_attributes(df, target_cols)
