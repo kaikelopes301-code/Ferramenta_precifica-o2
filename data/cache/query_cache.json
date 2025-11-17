@@ -2759,5 +2759,68 @@
     },
     "created_at": 1763332586.3906026,
     "last_accessed": 1763332586.3906028
+  },
+  "cc5bb1120611c111007560b182888b6d": {
+    "query": "celular",
+    "corpus_hash": "aae78fc67086bf16_4114",
+    "top_k": 5,
+    "result": {
+      "query_original": "celular",
+      "query_normalizada": "celular",
+      "consonant_key": "clr",
+      "expansoes_detectadas": [],
+      "modelo_semantico": "sentence-transformers/all-MiniLM-L6-v2",
+      "modelo_reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "resultados": [
+        {
+          "sugeridos": "celular smartphone com plano de dados",
+          "score": 100.0,
+          "valor_unitario": 108.43416666666667,
+          "vida_util_meses": 1.0,
+          "manutencao_percent": 85.71428571428571,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=celular%20smartphone%20com%20plano%20de%20dados"
+        },
+        {
+          "sugeridos": "cesto funcional multiuso",
+          "score": 75.95,
+          "valor_unitario": 32.4104,
+          "vida_util_meses": 12.0,
+          "manutencao_percent": 1.5742857142857143,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=cesto%20funcional%20multiuso"
+        },
+        {
+          "sugeridos": "aplicador de cera",
+          "score": 70.06,
+          "valor_unitario": 289.94307692307694,
+          "vida_util_meses": 12.0,
+          "manutencao_percent": 1.2516666666666667,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=aplicador%20de%20cera"
+        },
+        {
+          "sugeridos": "conjunto de balde com mop",
+          "score": 63.13,
+          "valor_unitario": 96.90400000000002,
+          "vida_util_meses": 12.0,
+          "manutencao_percent": 1.5742857142857143,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=conjunto%20de%20balde%20com%20mop"
+        },
+        {
+          "sugeridos": "cesto aramado para 3 bombonas de 5 l",
+          "score": 61.12,
+          "valor_unitario": 193.5,
+          "vida_util_meses": 12.0,
+          "manutencao_percent": 1.335,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=cesto%20aramado%20para%203%20bombonas%20de%205%20l"
+        }
+      ],
+      "total": 5
+    },
+    "created_at": 1763395896.370559,
+    "last_accessed": 1763395896.3705604
   }
 }

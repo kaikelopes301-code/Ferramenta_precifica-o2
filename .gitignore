@@ -72,3 +72,15 @@ frontend/.next/static/chunks/
 # ONNX (removido - não usado)
 *.onnx
 onnx_cache/
+
+
+# arquivos teste
+
+test_api_endpoints.py
+test_api_security.py
+test_db_config.py
+test_integration.py
+test_performance.py
+test_semantic_search.py
+tests/
+
