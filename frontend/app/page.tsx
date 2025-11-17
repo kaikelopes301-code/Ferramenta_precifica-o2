@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import dynamic from "next/dynamic"
 import { SearchInput } from "@/components/search-input"
-import { EquipmentCard } from "@/components/equipment-card"
+const EquipmentCard = dynamic(
+  () => import("@/components/equipment-card").then(m => m.EquipmentCard),
+  { ssr: false, loading: () => null }
+)
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Sparkles, Upload, Download, TrendingUp, Zap, Shield } from "lucide-react"
 import Image from "next/image"
@@ -74,11 +77,18 @@ export default function Home() {
   const USER_ID = "demo-user"
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [cart, setCart] = useState<CartItem[]>([])
+  const [cartReady, setCartReady] = useState(false)
   const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
     checkDataStatus()
   }, [])
+
+  useEffect(() => {
+    if (!cartReady && cart.length > 0) {
+      setCartReady(true)
+    }
+  }, [cartReady, cart.length])
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -164,6 +174,7 @@ export default function Home() {
     `${e.sugeridos}__${e.valor_unitario ?? "na"}__${e.vida_util_meses ?? "na"}`
 
   const addToCart = (e: Equipment) => {
+    setCartReady(true)
     const baseId = itemId(e)
     const descKey = (e.origemDescricao ?? lastQuery ?? "").trim()
     const cartId = `${baseId}__d:${descKey}`
@@ -801,14 +812,16 @@ export default function Home() {
         </div>
       </footer>
 
-      <CartWidget
-        items={cart}
-        onClear={clearCart}
-        onRemove={removeFromCart}
-        onChangeQty={changeQty}
-        onChangeNotes={changeNotes}
-        onChangeName={changeName}
-      />
+      {cartReady && (
+        <CartWidget
+          items={cart}
+          onClear={clearCart}
+          onRemove={removeFromCart}
+          onChangeQty={changeQty}
+          onChangeNotes={changeNotes}
+          onChangeName={changeName}
+        />
+      )}
     </main>
   )
 }

@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
-import { Toaster } from "sonner"
-import { ThemeProvider } from "next-themes"
 import './globals.css'
+import Providers from './providers'
 import Metrics from "@/components/metrics"
 
 const inter = Inter({ 
@@ -35,27 +34,11 @@ export default function RootLayout({
   return (
     <html lang="pt-br" suppressHydrationWarning className="scroll-smooth">
       <body className={`${inter.className} antialiased`} suppressHydrationWarning>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <Providers>
           {children}
-          <Toaster 
-            position="top-right"
-            duration={3000}
-            toastOptions={{
-              style: {
-                background: 'var(--color-card)',
-                color: 'var(--color-card-foreground)',
-                border: '1px solid var(--color-border)',
-              },
-            }}
-          />
           {/* Métricas de Web Vitals (leve, sem mudar UI) */}
           <Metrics />
-        </ThemeProvider>
+        </Providers>
       </body>
     </html>
   )

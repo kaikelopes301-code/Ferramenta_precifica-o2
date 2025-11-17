@@ -1,4 +1,0 @@
-ranking,sugeridos,valor_unitario,vida_util_meses,manutencao_percent,confianca,sugestao_incorreta,feedback,equipamento_material_revisado,_query,_use_tfidf,_timestamp
-1,teste,,,,,False,,,teste,True,2025-11-04T02:06:14.061328+00:00
-1,teste,,,,,False,,,teste,True,2025-11-04T02:06:16.323031+00:00
-1,teste,,,,,False,,,teste,True,2025-11-04T02:06:18.415177+00:00

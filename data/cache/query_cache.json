@@ -2696,5 +2696,68 @@
     },
     "created_at": 1762895079.8946836,
     "last_accessed": 1762895079.894684
+  },
+  "a4f28bcd2fecd199a07814fd55bd0ec0": {
+    "query": "mop industrial",
+    "corpus_hash": "aae78fc67086bf16_4114",
+    "top_k": 5,
+    "result": {
+      "query_original": "mop industrial",
+      "query_normalizada": "mop industrial",
+      "consonant_key": "mpndstrl",
+      "expansoes_detectadas": [],
+      "modelo_semantico": "sentence-transformers/all-MiniLM-L6-v2",
+      "modelo_reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "resultados": [
+        {
+          "sugeridos": "mop pó 60 cm completo",
+          "score": 100.0,
+          "valor_unitario": 96.70234042553194,
+          "vida_util_meses": 12.0,
+          "manutencao_percent": 1.4689999999999999,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=mop%20p%C3%B3%2060%20cm%20completo"
+        },
+        {
+          "sugeridos": "refil de mop água",
+          "score": 96.58,
+          "valor_unitario": 23.75,
+          "vida_util_meses": 6.0,
+          "manutencao_percent": null,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=refil%20de%20mop%20%C3%A1gua"
+        },
+        {
+          "sugeridos": "mop água 60 cm",
+          "score": 92.78,
+          "valor_unitario": 63.55133333333333,
+          "vida_util_meses": 12.0,
+          "manutencao_percent": 1.536,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=mop%20%C3%A1gua%2060%20cm"
+        },
+        {
+          "sugeridos": "esfregão elétrico",
+          "score": 90.61,
+          "valor_unitario": 21981.81818181818,
+          "vida_util_meses": 60.0,
+          "manutencao_percent": 98.66666666666667,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=esfreg%C3%A3o%20el%C3%A9trico"
+        },
+        {
+          "sugeridos": "mop pó 60 cm refil",
+          "score": 88.72,
+          "valor_unitario": 54.2,
+          "vida_util_meses": 1.0,
+          "manutencao_percent": 1.67,
+          "marca": null,
+          "link_detalhes": "/detalhes?grupo=mop%20p%C3%B3%2060%20cm%20refil"
+        }
+      ],
+      "total": 5
+    },
+    "created_at": 1763332586.3906026,
+    "last_accessed": 1763332586.3906028
   }
 }

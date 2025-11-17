@@ -1,0 +1,47 @@
+{
+  "timestamp": "2025-11-16 20:06:54",
+  "success_rate": 75.0,
+  "successful_tests": 3,
+  "total_tests": 4,
+  "avg_latency_ms": 7860.09,
+  "tests": {
+    "backend_health": {
+      "status": "error",
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=20)"
+    },
+    "backend_search": {
+      "status": "success",
+      "status_code": 200,
+      "latency_ms": 23483.73,
+      "results_count": 5
+    },
+    "frontend_proxy": {
+      "status": "success",
+      "status_code": 200,
+      "latency_ms": 24.38,
+      "response": {
+        "has_data": true,
+        "rows": 4114,
+        "columns": [
+          "fonte",
+          "fornecedor",
+          "marca",
+          "descricao",
+          "descricao_saneada",
+          "descricao_padronizada",
+          "valor_unitario",
+          "vida_util_meses",
+          "manutencao"
+        ],
+        "last_modified": 1762222640.5393245
+      }
+    },
+    "api_route": {
+      "status": "success",
+      "status_code": 200,
+      "latency_ms": 72.15,
+      "results_count": 5
+    }
+  },
+  "status": "PASS"
+}

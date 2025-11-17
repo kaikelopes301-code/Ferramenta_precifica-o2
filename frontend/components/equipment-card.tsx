@@ -1,11 +1,16 @@
-"use client"
+﻿"use client"
+import dynamic from "next/dynamic"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Wrench, DollarSign, Calendar, TrendingUp, CheckCircle2, ShoppingCart, Info, X } from "lucide-react"
+import { Wrench, DollarSign, Calendar, TrendingUp, CheckCircle2, ShoppingCart, Info } from "lucide-react"
 import type { Equipment } from "@/app/page"
 import { useState } from "react"
-import * as Dialog from "@radix-ui/react-dialog"
+
+const EquipmentCardDialog = dynamic(
+  () => import("./equipment-card-dialog").then(m => m.EquipmentCardDialog),
+  { ssr: false, loading: () => null }
+)
 
 interface EquipmentCardProps {
   equipment: Equipment
@@ -24,56 +29,56 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
       color: "text-muted-foreground", 
       bg: "bg-muted/10",
       label: "N/A",
-      icon: "⚪"
+      icon: "âšª"
     }
     if (confidence >= 90) return { 
       color: "text-emerald-600 dark:text-emerald-400", 
       bg: "bg-emerald-500/10",
       label: "Excelente",
-      icon: "🟢"
+      icon: "ðŸŸ¢"
     }
     if (confidence >= 75) return { 
       color: "text-yellow-600 dark:text-yellow-400", 
       bg: "bg-yellow-500/10",
       label: "Boa",
-      icon: "🟡"
+      icon: "ðŸŸ¡"
     }
     return { 
       color: "text-orange-600 dark:text-orange-400", 
       bg: "bg-orange-500/10",
       label: "Moderada",
-      icon: "🟠"
+      icon: "ðŸŸ "
     }
   }
 
   const getMaintenanceConfig = (maintenance: number | null) => {
     if (!maintenance || maintenance === 0) return {
       bg: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
-      label: "Sem Manutenção",
+      label: "Sem ManutenÃ§Ã£o",
      
-      description: "Não requer manutenção"
+      description: "NÃ£o requer manutenÃ§Ã£o"
     }
     if (maintenance <= 20) {
       return {
         bg: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
         label: "Baixa",
        
-        description: "Manutenção mínima"
+        description: "ManutenÃ§Ã£o mÃ­nima"
       }
     }
     if (maintenance <= 50) {
       return {
         bg: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/30",
-        label: "Média",
-        icon: "⚠️",
-        description: "Manutenção moderada"
+        label: "MÃ©dia",
+        icon: "âš ï¸",
+        description: "ManutenÃ§Ã£o moderada"
       }
     }
     return {
       bg: "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30",
       label: "Alta",
     
-      description: "Manutenção frequente"
+      description: "ManutenÃ§Ã£o frequente"
     }
   }
 
@@ -85,7 +90,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
   })
 
   const formatPrice = (price: number | null) => {
-    if (price === null || price === undefined || isNaN(Number(price))) return "Não informado"
+    if (price === null || price === undefined || isNaN(Number(price))) return "NÃ£o informado"
     return currencyBRL.format(Number(price))
   }
 
@@ -95,7 +100,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
   const handleAdd = async () => {
     setIsAdding(true)
     onAdd?.(equipment)
-    // Animação visual de feedback
+    // AnimaÃ§Ã£o visual de feedback
     setTimeout(() => setIsAdding(false), 600)
   }
 
@@ -108,7 +113,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
       {/* Gradiente decorativo no topo */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/0 via-primary/60 to-primary/0"></div>
       
-      {/* Badge de seleção */}
+      {/* Badge de seleÃ§Ã£o */}
       {selected && (
         <div className="absolute top-2.5 left-2.5 z-10 animate-pop-in">
           <Badge className="bg-primary/90 text-primary-foreground border-primary shadow-lg backdrop-blur-sm font-semibold text-xs">
@@ -159,7 +164,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
             <label className="relative inline-flex items-center cursor-pointer group/checkbox">
               <input
                 type="checkbox"
-                aria-label="Selecionar sugestão"
+                aria-label="Selecionar sugestÃ£o"
                 className="sr-only peer"
                 checked={selected}
                 onChange={() => onToggleSelect?.(equipment)}
@@ -176,7 +181,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
 
       <CardContent className={`${dense ? 'pb-3 px-4' : 'pb-3.5 px-5'} flex-1 min-h-0`}>
         <div className={`${dense ? 'space-y-3' : 'space-y-3.5'}`}>
-          {/* Preço destacado - altura fixa */}
+          {/* PreÃ§o destacado - altura fixa */}
           <div className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-primary/8 via-primary/12 to-primary/6 ${dense ? 'p-3.5' : 'p-4'} border border-primary/25 shadow-md hover:shadow-lg transition-all duration-300 group/price`}>
             <div className="flex items-center gap-3">
               <div className={`flex ${dense ? 'h-11 w-11' : 'h-14 w-14'} items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary/95 to-primary/90 shadow-lg group-hover/price:shadow-xl transition-all duration-300 group-hover/price:scale-105 flex-shrink-0`}>
@@ -184,7 +189,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
               </div>
               <div className="flex-1 min-w-0 space-y-2">
                 <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 truncate">Valor Unitário</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 truncate">Valor UnitÃ¡rio</p>
                   <p className={`${dense ? 'text-lg' : 'text-xl'} font-extrabold text-primary leading-none truncate`}>
                     {formatPrice(equipment.valor_unitario)}
                   </p>
@@ -196,7 +201,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
                       <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide truncate">Custo Mensal</p>
                       <p className="text-sm font-bold text-primary/80 flex-shrink-0">
                         {formatPrice(equipment.valor_unitario / equipment.vida_util_meses)}
-                        <span className="text-[10px] font-medium text-muted-foreground ml-1">/mês</span>
+                        <span className="text-[10px] font-medium text-muted-foreground ml-1">/mÃªs</span>
                       </p>
                     </div>
                   </div>
@@ -205,34 +210,34 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
             </div>
           </div>
 
-          {/* Grid de estatísticas - altura fixa */}
+          {/* Grid de estatÃ­sticas - altura fixa */}
           <div className={`grid grid-cols-2 ${dense ? 'gap-2.5' : 'gap-3'}`}>
-            {/* Vida útil */}
+            {/* Vida Ãºtil */}
             <div className={`group/stat rounded-lg border border-border/50 bg-gradient-to-br from-blue-500/5 to-blue-500/8 ${dense ? 'p-2.5' : 'p-3'} hover:shadow-sm hover:border-blue-500/25 transition-all duration-300 hover:-translate-y-0.5 flex flex-col`}>
               <div className="mb-1.5 flex items-center gap-1.5">
                 <div className="p-1 rounded-md bg-blue-500/12 group-hover/stat:bg-blue-500/20 transition-colors flex-shrink-0">
                   <Calendar className={`${dense ? 'h-3 w-3' : 'h-3.5 w-3.5'} text-blue-600 dark:text-blue-400`} />
                 </div>
-                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide truncate">Vida útil</span>
+                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide truncate">Vida Ãºtil</span>
               </div>
               <p className={`${dense ? 'text-base' : 'text-lg'} font-bold text-foreground leading-tight truncate`}>
                 {equipment.vida_util_meses ? `${equipment.vida_util_meses}m` : "N/A"}
               </p>
               <p className="text-[9px] text-muted-foreground mt-1 leading-snug truncate">
-                {equipment.vida_util_meses ? 'Durabilidade' : 'Não informado'}
+                {equipment.vida_util_meses ? 'Durabilidade' : 'NÃ£o informado'}
               </p>
             </div>
 
-            {/* Confiança */}
+            {/* ConfianÃ§a */}
             <div 
               className={`group/stat rounded-lg border border-border/50 ${confidenceConfig.bg} ${dense ? 'p-2.5' : 'p-3'} hover:shadow-sm transition-all duration-300 hover:-translate-y-0.5 cursor-help flex flex-col`}
-              title="Confiança calculada pelo modelo TF-IDF híbrido"
+              title="ConfianÃ§a calculada pelo modelo TF-IDF hÃ­brido"
             >
               <div className="mb-1.5 flex items-center gap-1.5">
                 <div className={`p-1 rounded-md ${confidenceConfig.bg} group-hover/stat:scale-105 transition-transform flex-shrink-0`}>
                   <TrendingUp className={`${dense ? 'h-3 w-3' : 'h-3.5 w-3.5'} ${confidenceConfig.color}`} />
                 </div>
-                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide truncate flex-1">Confiança</span>
+                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide truncate flex-1">ConfianÃ§a</span>
                 <Info className="h-2.5 w-2.5 text-muted-foreground/50 flex-shrink-0" />
               </div>
               <div className="flex items-baseline gap-1">
@@ -247,14 +252,14 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
             </div>
           </div>
 
-          {/* Manutenção - altura fixa */}
+          {/* ManutenÃ§Ã£o - altura fixa */}
           <div className={`relative overflow-hidden flex items-center justify-between ${dense ? 'p-2.5' : 'p-3'} rounded-lg border ${maintenanceConfig.bg} hover:shadow-sm transition-all duration-300 group/maintenance min-h-[48px]`}>
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
               <div className={`p-1.5 rounded-md ${maintenanceConfig.bg} group-hover/maintenance:scale-105 transition-transform flex-shrink-0`}>
                 <Wrench className="h-3.5 w-3.5" />
               </div>
               <div className="min-w-0 flex-1">
-                <span className="text-sm font-bold block leading-none mb-0.5 truncate">Manutenção</span>
+                <span className="text-sm font-bold block leading-none mb-0.5 truncate">ManutenÃ§Ã£o</span>
                 <span className="text-[9px] text-muted-foreground truncate block">{maintenanceConfig.description}</span>
               </div>
             </div>
@@ -266,7 +271,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
       </CardContent>
 
       <CardFooter className={`${dense ? 'pt-0 pb-3.5 px-4' : 'pt-0 pb-4 px-5'} flex gap-2 flex-shrink-0`}>
-        {/* Botão de adicionar */}
+        {/* BotÃ£o de adicionar */}
         <Button
           type="button"
           onClick={handleAdd}
@@ -288,7 +293,7 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
           )}
         </Button>
 
-        {/* Botão de detalhes */}
+        {/* BotÃ£o de detalhes */}
         {equipment.link_detalhes && equipment.link_detalhes !== '#' && (
           <>
             <Button
@@ -301,50 +306,14 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
             >
               <Info className="h-4 w-4" />
             </Button>
-            <Dialog.Root open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-              <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
-                <Dialog.Content className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[92vw] max-w-lg rounded-xl border border-border bg-card p-5 shadow-2xl focus:outline-none">
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <Dialog.Title className="text-lg font-semibold leading-tight">{equipment.sugeridos}</Dialog.Title>
-                    <button
-                      onClick={() => setIsDetailsOpen(false)}
-                      className="h-8 w-8 rounded-lg hover:bg-muted/50 flex items-center justify-center transition-colors"
-                      aria-label="Fechar"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-primary/5 to-transparent border border-primary/15">
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="h-4 w-4 text-primary" />
-                        <span className="text-sm font-medium">Valor Unitário</span>
-                      </div>
-                      <span className="text-sm font-semibold">
-                        {formatPrice(equipment.valor_unitario)}
-                      </span>
-                    </div>
-                  
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-blue-500/5 to-transparent border border-blue-500/15">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                        <span className="text-sm font-medium">Vida Útil</span>
-                      </div>
-                      <span className="text-sm font-semibold">{equipment.vida_util_meses ? `${equipment.vida_util_meses} meses` : 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-orange-500/5 to-transparent border border-orange-500/15">
-                      <div className="flex items-center gap-2">
-                        <Wrench className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                        <span className="text-sm font-medium">Manutenção</span>
-                      </div>
-                      <span className="text-sm font-semibold">{equipment.manutencao_percent != null ? `${equipment.manutencao_percent}%` : 'N/A'}</span>
-                    </div>
-                  </div>    
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
+            {isDetailsOpen && (
+              <EquipmentCardDialog
+                open={isDetailsOpen}
+                onOpenChange={setIsDetailsOpen}
+                equipment={equipment}
+                formatPrice={formatPrice}
+              />
+            )}
           </>
         )}
       </CardFooter>
@@ -354,3 +323,4 @@ export function EquipmentCard({ equipment, dense, selected = false, onToggleSele
     </Card>
   )
 }
+
