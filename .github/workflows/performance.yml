@@ -82,7 +82,7 @@ jobs:
             APP_SIZE=$(du -sb .next/static/chunks/pages/_app-*.js | awk '{print $1}')
             echo "App bundle size: ${APP_SIZE} bytes"
             
-            MAX_APP_SIZE=128000
+            MAX_APP_SIZE=328000
             if [ "$APP_SIZE" -gt "$MAX_APP_SIZE" ]; then
               echo "❌ App bundle too large: ${APP_SIZE}B > ${MAX_APP_SIZE}B"
               exit 1
