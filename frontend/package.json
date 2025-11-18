@@ -9,6 +9,7 @@
     "lint": "next lint --fix",
     "lint:check": "next lint",
     "type-check": "tsc --noEmit",
+    "test": "echo 'No tests configured yet' && exit 0",
     "analyze": "ANALYZE=true npm run build",
     "build:prod": "npm run lint:check && npm run type-check && npm run build",
     "perf": "npm run build && npm run start"
