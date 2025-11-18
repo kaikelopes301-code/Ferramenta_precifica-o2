@@ -11,8 +11,7 @@ export async function POST(req: NextRequest) {
     })
     const data = await r.json().catch(()=> ({ success: false }))
     return NextResponse.json(data, { status: r.status })
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : 'unknown_error'
-    return NextResponse.json({ success: false, error: 'proxy_error', detail }, { status: 500 })
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: 'proxy_error', detail: e?.message }, { status: 500 })
   }
 }

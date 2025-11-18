@@ -17,27 +17,27 @@ export default function Metrics() {
       // LCP
       if ('PerformanceObserver' in window) {
         try {
-          const po = new PerformanceObserver((list: PerformanceObserverEntryList) => {
-            const entries = list.getEntries() as PerformanceEntry[]
-            const last = entries[entries.length - 1] as LargestContentfulPaint | undefined
+          const po = new PerformanceObserver((list) => {
+            const entries = list.getEntries()
+            const last = entries[entries.length - 1] as any
             if (last) {
               const lcp = last.startTime
               console.info('[metrics] LCP(ms)=', Math.round(lcp))
             }
           })
-          po.observe({ type: 'largest-contentful-paint', buffered: true })
+          po.observe({ type: 'largest-contentful-paint', buffered: true as any })
         } catch {}
 
         // FID (fallback) ou INP quando suportado: name = 'first-input' (antigo)
         try {
-          const po2 = new PerformanceObserver((list: PerformanceObserverEntryList) => {
-            const entry = list.getEntries()[0] as PerformanceEventTiming | undefined
+          const po2 = new PerformanceObserver((list) => {
+            const entry = list.getEntries()[0] as any
             if (entry) {
-              const fid = (entry.processingStart || entry.startTime) - entry.startTime
+              const fid = entry.processingStart - entry.startTime
               console.info('[metrics] FID(ms)=', Math.round(fid))
             }
           })
-          po2.observe({ type: 'first-input', buffered: true })
+          po2.observe({ type: 'first-input', buffered: true as any })
         } catch {}
       }
     } catch {}

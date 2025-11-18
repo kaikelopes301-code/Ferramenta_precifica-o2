@@ -39,30 +39,32 @@ export default function DetailsPage() {
       return
     }
 
-    const fetchDetails = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/detalhes/${encodeURIComponent(grupo)}`)
-        
-        if (!response.ok) {
-          throw new Error('Grupo não encontrado')
-        }
-
-        const data = await response.json()
-        setDetails(data)
-      } catch (error) {
-        console.error('Erro ao buscar detalhes:', error)
-        toast({
-          title: "Erro",
-          description: "Não foi possível carregar os detalhes",
-          variant: "destructive",
-        })
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
     fetchDetails()
-  }, [grupo, router, toast])
+  }, [grupo])
+
+  const fetchDetails = async () => {
+    if (!grupo) return
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/detalhes/${encodeURIComponent(grupo)}`)
+      
+      if (!response.ok) {
+        throw new Error('Grupo não encontrado')
+      }
+
+      const data = await response.json()
+      setDetails(data)
+    } catch (error) {
+      console.error('Erro ao buscar detalhes:', error)
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os detalhes",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const currencyBRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const formatPrice = (price: number | undefined) => {

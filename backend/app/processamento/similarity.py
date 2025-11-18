@@ -1,8 +1,3 @@
-"""
-TF-IDF com n-gramas (caracteres/palavras), correção ortográfica, busca híbrida.
-Lazy imports sklearn (~3s economia), processamento vetorizado, robusto a typos.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,12 +11,12 @@ import unicodedata
 import numpy as np
 from rapidfuzz import process as rf_process, fuzz as rf_fuzz
 
-# Lazy imports sklearn (economiza ~3s startup)
+# Lazy imports for sklearn to avoid 3+ second startup cost
 TfidfVectorizer = None
 cosine_similarity = None
 
 def _lazy_import_sklearn():
-    """Import lazy sklearn."""
+    """Lazy import of sklearn to avoid startup cost."""
     global TfidfVectorizer, cosine_similarity
     if TfidfVectorizer is None:
         try:
@@ -35,12 +30,14 @@ def _lazy_import_sklearn():
 
 
 def _ensure_list(texts: Iterable[str]) -> List[str]:
-    """Garante que entrada é lista."""
     return list(texts) if not isinstance(texts, list) else texts
 
 
 def default_preprocess(s: str) -> str:
-    """Pré-processamento leve: minúsculas, remove espaços extras."""
+    """
+    Pré-processamento leve: baixa caixa e remove espaços extras.
+    Evitamos remoções agressivas para preservar n-grams de caracteres.
+    """
     if not s:
         return ""
     s = s.strip().lower()
@@ -48,15 +45,6 @@ def default_preprocess(s: str) -> str:
 
 
 def strip_accents(s: str) -> str:
-    """
-    Remove acentuação via normalização Unicode.
-    
-    Args:
-        s: String com possível acentuação
-        
-    Returns:
-        String sem acentos (ASCII puro)
-    """
     if not s:
         return ""
     return (
@@ -67,22 +55,8 @@ def strip_accents(s: str) -> str:
 
 
 def simple_tokenize(s: str) -> List[str]:
-    """
-    Tokenização simples: divide em palavras alfanuméricas.
-    
-    Processo:
-    1. Normaliza e remove acentos
-    2. Converte não-alfanuméricos em espaços
-    3. Divide em tokens
-    
-    Args:
-        s: String a tokenizar
-        
-    Returns:
-        Lista de tokens (palavras)
-    """
     s = default_preprocess(strip_accents(s))
-    # Mantém letras/dígitos e espaços
+    # mantém letras/dígitos e espaços
     out = []
     cur = []
     for ch in s:
@@ -98,18 +72,6 @@ def simple_tokenize(s: str) -> List[str]:
 
 
 def _common_prefix_len(a: str, b: str) -> int:
-    """
-    Calcula comprimento do prefixo comum entre duas strings.
-    
-    Útil para detectar variações de palavras (ex: "vassoura" vs "vassourão").
-    
-    Args:
-        a: Primeira string
-        b: Segunda string
-        
-    Returns:
-        Comprimento do prefixo comum
-    """
     m = min(len(a), len(b))
     i = 0
     while i < m and a[i] == b[i]:
@@ -118,96 +80,33 @@ def _common_prefix_len(a: str, b: str) -> int:
 
 
 class TokenVocab:
-    """
-    Vocabulário de tokens extraídos do corpus, usado para sugerir correções de queries.
-    
-    Funcionalidade:
-    --------------
-    - Extrai vocabulário único do corpus
-    - Sugere correções para termos mal escritos
-    - Corrige queries automaticamente baseado em similaridade fuzzy
-    - Útil para melhorar robustez a typos e variações ortográficas
-    
-    Algoritmo:
-    ---------
-    Usa RapidFuzz WRatio para encontrar tokens similares no vocabulário.
-    WRatio é robusto a diferenças de ordem e pequenas variações.
-    """
+    """Vocabulário de tokens extraídos do corpus, usado para sugerir correções."""
     def __init__(self, tokens: Sequence[str]):
-        """
-        Inicializa vocabulário a partir de tokens.
-        
-        Args:
-            tokens: Sequência de tokens (palavras) do corpus
-        """
-        # Mantém únicos e ignora tokens muito curtos (< 3 chars)
+        # mantém únicos e ignora tokens muito curtos
         toks = [t for t in tokens if t and len(t) >= 3]
         self.tokens = sorted(set(toks))
 
     @classmethod
     def from_texts(cls, texts: Iterable[str]) -> "TokenVocab":
-        """
-        Cria vocabulário a partir de corpus de textos.
-        
-        Args:
-            texts: Corpus de textos
-            
-        Returns:
-            Instância de TokenVocab com vocabulário extraído
-        """
         all_toks: List[str] = []
         for t in texts:
             all_toks.extend(simple_tokenize(t))
         return cls(all_toks)
 
     def suggest(self, token: str, limit: int = 3) -> List[Tuple[str, float]]:
-        """
-        Sugere correções para um token baseado no vocabulário.
-        
-        Usa RapidFuzz WRatio (robusto a pequenas diferenças).
-        
-        Args:
-            token: Token a corrigir
-            limit: Número máximo de sugestões (padrão: 3)
-            
-        Returns:
-            Lista de tuplas (candidato, score_normalizado) ordenada por score
-        """
         token = strip_accents(token.lower().strip())
         if not token or len(self.tokens) == 0:
             return []
-        # Usa WRatio (robusto a pequenas diferenças); retorna top N
+        # usa WRatio (robusto a pequenas diferenças); retorna top N
         res = rf_process.extract(token, self.tokens, scorer=rf_fuzz.WRatio, limit=limit)
-        # Resultado: List[(cand, score, idx)] -> converte para (cand, score/100)
+        # resultado: List[(cand, score, idx)] -> converte para (cand, score/100)
         return [(cand, float(score) / 100.0) for cand, score, _ in res]
 
     def correct_query(self, query: str) -> Tuple[str, Dict[str, str]]:
-        """
-        Corrige automaticamente termos em uma query baseado no vocabulário.
-        
-        Estratégia:
-        ----------
-        - Ignora números e tokens muito curtos (< 3 chars)
-        - Para cada token, busca melhor candidato no vocabulário
-        - Aplica limiar dinâmico: mais rigoroso para tokens curtos
-        - Retorna query corrigida e dicionário de mudanças
-        
-        Args:
-            query: Query original a corrigir
-            
-        Returns:
-            Tupla (query_corrigida, dicionário_de_mudanças)
-            
-        Exemplo:
-            >>> vocab = TokenVocab(["motor", "compressor"])
-            >>> vocab.correct_query("motro eletrico")
-            ("motor eletrico", {"motro": "motor"})
-        """
         toks = simple_tokenize(query)
         changes: Dict[str, str] = {}
         new_toks: List[str] = []
         for t in toks:
-            # Ignora tokens muito curtos ou numéricos
             if len(t) < 3 or t.isdigit():
                 new_toks.append(t)
                 continue
@@ -216,7 +115,7 @@ class TokenVocab:
                 new_toks.append(t)
                 continue
             cand, score = cands[0]
-            # Limiar dinâmico: mais rigoroso para tokens curtos
+            # limiar dinâmico
             thresh = 0.85 if len(t) >= 5 else 0.90
             if score >= thresh and cand != t:
                 new_toks.append(cand)
@@ -229,27 +128,10 @@ class TokenVocab:
 @dataclass
 class TfidfSearchIndex:
     """
-    Índice de busca por similaridade baseado em TF-IDF com n-gramas.
+    Índice de busca por similaridade baseado em TF-IDF com n-grams.
 
-    Características:
-    ---------------
-    - Por padrão usa n-gramas de caracteres (char_wb) para robustez a variações e typos
-    - Suporta também n-gramas de palavras (word) para captura de frases
-    - Busca eficiente via scipy sparse matrices
-    - Similaridade calculada por cosseno
-    
-    N-gramas de caracteres (char_wb):
-    --------------------------------
-    - Extrai sequências de N caracteres das palavras
-    - Exemplo: "motor" com (3,5) → ["mot", "moto", "motor", "otor", ...]
-    - Robusto a typos (ex: "motr" ainda tem overlap com "motor")
-    - Não depende de dicionário ou tokenização complexa
-    
-    Atributos:
-    ---------
-    vectorizer: TfidfVectorizer do sklearn
-    matrix: Matriz esparsa TF-IDF do corpus
-    corpus: Lista de textos originais
+    - Por padrão usa n-grams de caracteres (char_wb) para robustez a variações e typos.
+    - Exponibiliza métodos para consultar top-k itens similares via cosseno.
     """
 
     vectorizer: Any  # TfidfVectorizer
@@ -269,23 +151,6 @@ class TfidfSearchIndex:
         preprocessor: Optional[Any] = default_preprocess,
         stop_words: Optional[Sequence[str]] = None,
     ) -> "TfidfSearchIndex":
-        """
-        Constrói índice TF-IDF a partir de corpus.
-        
-        Args:
-            texts: Corpus de textos a indexar
-            analyzer: Tipo de análise ("char_wb", "char", "word")
-            ngram_range: Faixa de n-gramas (ex: (3, 5) = trigramas até 5-gramas)
-            max_features: Limite de features (controla dimensionalidade)
-            min_df: Frequência mínima de documento (ignora termos raros)
-            max_df: Frequência máxima de documento (ignora termos muito comuns)
-            norm: Normalização dos vetores ("l2" recomendado para cosseno)
-            preprocessor: Função de pré-processamento
-            stop_words: Lista de stop words (apenas para analyzer="word")
-            
-        Returns:
-            Instância de TfidfSearchIndex pronta para busca
-        """
         corpus = _ensure_list(texts)
         # Para analyzer="word", manter stop_words se fornecido; para char, ignorar
         TfidfVectorizer_cls, _ = _lazy_import_sklearn()
@@ -303,15 +168,6 @@ class TfidfSearchIndex:
         return cls(vectorizer=vectorizer, matrix=matrix, corpus=corpus)
 
     def query_vector(self, query: str):
-        """
-        Transforma query em vetor TF-IDF.
-        
-        Args:
-            query: String de busca
-            
-        Returns:
-            Vetor esparso TF-IDF da query
-        """
         return self.vectorizer.transform([query])
 
     def search(
@@ -323,23 +179,13 @@ class TfidfSearchIndex:
         exclude_indices: Optional[Sequence[int]] = None,
     ) -> List[Tuple[int, float]] | List[int]:
         """
-        Busca itens mais similares à query por similaridade de cosseno.
-        
-        Args:
-            query: String de busca
-            top_k: Número de resultados a retornar
-            min_score: Score mínimo para incluir resultado
-            return_scores: Se True, retorna tuplas (índice, score); senão apenas índices
-            exclude_indices: Índices a excluir dos resultados
-            
-        Returns:
-            Lista de tuplas (índice, score) ou lista de índices, ordenada por score decrescente
+        Retorna índices dos itens mais similares (e scores, se return_scores=True).
         """
         qv = self.query_vector(query)
         _, cosine_similarity_fn = _lazy_import_sklearn()
         sims = cosine_similarity_fn(qv, self.matrix).ravel()
         if exclude_indices:
-            sims[list(exclude_indices)] = -1.0  # Garante exclusão
+            sims[list(exclude_indices)] = -1.0  # garante exclusão
         if min_score > 0:
             mask = sims >= min_score
             candidates = np.where(mask)[0]
@@ -347,7 +193,7 @@ class TfidfSearchIndex:
             candidates = np.arange(sims.shape[0])
         if len(candidates) == 0:
             return []
-        # Top-k por partição eficiente (mais rápido que ordenação completa)
+        # Top-k por partição eficiente
         k = min(top_k, len(candidates))
         part = np.argpartition(-sims[candidates], k - 1)[:k]
         top_idx_unsorted = candidates[part]
@@ -368,17 +214,7 @@ def build_index_from_dataframe(
     max_df: float | int = 1.0,
     norm: Optional[str] = "l2",
 ):
-    """
-    Conveniência para criar índice TF-IDF a partir de um DataFrame.
-    
-    Args:
-        df: DataFrame pandas
-        text_col: Nome da coluna com textos
-        ...: Demais parâmetros passados para TfidfSearchIndex.build()
-        
-    Returns:
-        Instância de TfidfSearchIndex
-    """
+    """Convenience para criar índice a partir de um DataFrame."""
     texts = df[text_col].fillna("").astype(str).tolist()
     return TfidfSearchIndex.build(
         texts,
@@ -402,23 +238,8 @@ def search_similares_dataframe(
     ngram_range: Tuple[int, int] = (3, 5),
 ):
     """
-    Cria índice temporário e retorna DataFrame com os top-k similares.
-    
-    Para alto desempenho em múltiplas consultas, prefira construir o índice uma vez
-    e reutilizá-lo com index.search().
-    
-    Args:
-        df: DataFrame pandas
-        text_col: Nome da coluna com textos
-        query: String de busca
-        top_k: Número de resultados
-        min_score: Score mínimo
-        return_cols: Colunas a retornar (None = todas)
-        analyzer: Tipo de análise TF-IDF
-        ngram_range: Faixa de n-gramas
-        
-    Returns:
-        DataFrame com resultados e coluna __score__
+    Cria índice temporário e retorna um DataFrame com os top-k similares.
+    Para alto desempenho em múltiplas consultas, prefira construir o índice uma vez.
     """
     index = build_index_from_dataframe(df, text_col, analyzer=analyzer, ngram_range=ngram_range)
     results = index.search(query, top_k=top_k, min_score=min_score, return_scores=True)
@@ -437,35 +258,6 @@ def search_similares_dataframe(
 
 @dataclass
 class HybridTfidfSearchIndex:
-    """
-    Índice híbrido combinando TF-IDF de caracteres, palavras e overlap de tokens.
-    
-    Estratégias combinadas:
-    ----------------------
-    1. TF-IDF char_wb (n-gramas de caracteres): Robusto a typos e variações
-    2. TF-IDF word (n-gramas de palavras): Captura frases e contexto
-    3. Token overlap ponderado por IDF: Presença de termos raros
-    
-    Otimizações aplicadas (Quick Win Part 3):
-    -----------------------------------------
-    - Pesos rebalanceados para melhor precisão
-    - Penalizações para âncoras e head tokens
-    - Tratamento especial para queries de um único token
-    - Truncamento de candidatos top_candidates_factor para eficiência
-    - Autocorreção automática via vocabulário
-    
-    Atributos:
-    ---------
-    vectorizer_char: TF-IDF de n-gramas de caracteres
-    matrix_char: Matriz esparsa char
-    vectorizer_word: TF-IDF de n-gramas de palavras
-    matrix_word: Matriz esparsa word
-    tokens_per_doc: Tokens únicos por documento
-    idf_map: Mapa termo → IDF para ponderação
-    corpus: Textos originais
-    vocab: Vocabulário para correção
-    w_char, w_word, w_overlap: Pesos dos componentes
-    """
  
     vectorizer_char: Any  # TfidfVectorizer
     matrix_char: Any
@@ -476,13 +268,13 @@ class HybridTfidfSearchIndex:
     corpus: List[str]
     vocab: Optional[TokenVocab] = None
 
-    # 🚀 Quick Win: Pesos rebalanceados TF-IDF (Part 3)
-    w_char: float = 0.6  # Peso de n-gramas de caracteres
-    w_word: float = 0.25  # Peso de n-gramas de palavras
-    w_overlap: float = 0.15  # Peso de overlap de tokens
-    anchor_penalty: float = 0.8  # Multiplicador quando nenhuma âncora aparece
-    anchor_min_len: int = 3  # Comprimento mínimo para considerar âncora
-    head_token_penalty: float = 0.9  # Penalização se documento não contiver o head token
+    # 🚀 Quick Win: Rebalanced TF-IDF weights (Part 3)
+    w_char: float = 0.6
+    w_word: float = 0.25
+    w_overlap: float = 0.15
+    anchor_penalty: float = 0.8  # multiplicador quando nenhum âncora aparece
+    anchor_min_len: int = 3
+    head_token_penalty: float = 0.9  # penalização se documento não contiver o head token
 
     @classmethod
     def build(
@@ -498,14 +290,6 @@ class HybridTfidfSearchIndex:
         anchor_penalty: float = 0.8,
         anchor_min_len: int = 3,
     ) -> "HybridTfidfSearchIndex":
-        """
-        Constrói índice híbrido a partir de corpus.
-        
-        Detalhes da implementação estão no código. Principais características:
-        - Dois vetorizadores TF-IDF (char e word)
-        - Extração de tokens e IDF por documento
-        - Vocabulário para autocorreção
-        """
         corpus = _ensure_list(texts)
         def _prep(x: str) -> str:
             return default_preprocess(strip_accents(x))
@@ -528,7 +312,7 @@ class HybridTfidfSearchIndex:
         )
         mat_word = vec_word.fit_transform(corpus)
 
-        # Prepara tokens por doc e mapa de idf
+        # prepara tokens por doc e mapa de idf
         tokens_per_doc = [set(simple_tokenize(t)) for t in corpus]
         idf_vals = getattr(vec_word, "idf_", None)
         idf_map: Dict[str, float] = {}
@@ -553,27 +337,24 @@ class HybridTfidfSearchIndex:
         )
 
     def _anchor_tokens(self, query: str) -> List[str]:
-        """Extrai tokens âncora (raros e relevantes) da query ordenados por IDF."""
         toks = simple_tokenize(query)
-        # Filtra âncoras por tamanho mínimo e ordena por IDF desc (mais raros = mais fortes)
+        # filtra âncoras por tamanho mínimo e ordena por IDF desc (mais raros = mais fortes)
         toks = [t for t in toks if len(t) >= self.anchor_min_len]
         toks.sort(key=lambda t: -self.idf_map.get(t, 0.0))
-        # Garantir inclusão de 'mop' quando presente (domínio frequente)
+        # garantir inclusão de 'mop' quando presente (domínio frequente)
         if 'mop' in toks and (not toks or toks[0] != 'mop'):
-            # Coloca 'mop' no início para maior influência
+            # coloca 'mop' no início para maior influência
             toks = ['mop'] + [t for t in toks if t != 'mop']
-        # Limita a algumas âncoras principais para não diluir (máx 5)
+        # limita a algumas âncoras principais para não diluir (máx 5)
         return toks[:5] if toks else []
 
     def _head_token(self, query: str) -> Optional[str]:
-        """Extrai primeiro token significativo da query."""
         for t in simple_tokenize(query):
             if len(t) >= self.anchor_min_len and not t.isdigit():
                 return t
         return None
 
     def _overlap_score(self, q_toks: List[str], doc_tokens: Sequence[set]) -> np.ndarray:
-        """Calcula score de overlap de tokens ponderado por IDF."""
         if not q_toks:
             return np.zeros(len(doc_tokens), dtype=float)
         q_weights = {t: self.idf_map.get(t, 1.0) for t in q_toks}
@@ -594,12 +375,7 @@ class HybridTfidfSearchIndex:
         min_score: float = 0.0,
         return_scores: bool = True,
     ) -> List[Tuple[int, float]] | List[int]:
-        """
-        Busca híbrida com autocorreção e múltiplas estratégias.
-        
-        Ver implementação completa no código fonte.
-        """
-        # Autocorreção leve: combina original e corrigida
+        # autocorreção leve: combina original e corrigida
         q_norm_input = strip_accents(query)
         q_corrected = None
         if self.vocab is not None:
@@ -608,7 +384,7 @@ class HybridTfidfSearchIndex:
                 q_corrected = qc
         if q_corrected and q_corrected != q_norm_input:
             return self.search_multi([q_norm_input, q_corrected], top_k=top_k, min_score=min_score, return_scores=return_scores)
-        # Sem correção: executa busca única
+        # sem correção: executa busca única
         return self._search_single(q_norm_input, top_k=top_k, min_score=min_score, return_scores=return_scores)
 
     def _search_single(
@@ -618,14 +394,6 @@ class HybridTfidfSearchIndex:
         min_score: float = 0.0,
         return_scores: bool = True,
     ) -> List[Tuple[int, float]] | List[int]:
-        """
-        Busca única combinando char TF-IDF, word TF-IDF e overlap.
-        
-        Ver código completo para detalhes de implementação incluindo:
-        - Truncamento de candidatos (Quick Win Part 3)
-        - Pesos otimizados para queries de token único
-        - Penalizações de âncoras e head tokens
-        """
         # 🚀 Quick Win: Configurable candidate truncation (Part 3)
         top_candidates_factor = 200
         

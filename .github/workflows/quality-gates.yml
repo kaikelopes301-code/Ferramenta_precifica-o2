@@ -1,10 +1,10 @@
-﻿name: 🏆 Enterprise Quality Gates - Next.js 15.x
+name: 🏆 Enterprise Quality Gates - Next.js 15.x
 
 on:
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, develop]
   push:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
   # Job 1: Código e Quality Gates
@@ -31,7 +31,7 @@ jobs:
     - name: 🔍 Run Enterprise Quality Audit
       id: audit
       run: |
-        python archive/legacy-code/kaike_audit.py . --json audit_results.json
+        python kaike_audit.py . --json audit_results.json
         echo "audit_exit_code=$?" >> $GITHUB_OUTPUT
         
     - name: 🚨 Execute Quality Gates
@@ -43,7 +43,7 @@ jobs:
         echo "🔍 Checking for unoptimized <img> tags..."
         
         # Buscar <img> tags não otimizadas
-        if grep -r '<img[^>]*src=' "frontend/app" "frontend/components" --include="*.tsx" --include="*.jsx"; then
+        if grep -r '<img[^>]*src=' "apenas site/app" "apenas site/components" --include="*.tsx" --include="*.jsx"; then
           echo "❌ FOUND UNOPTIMIZED <img> TAGS"
           echo "Replace with next/image component for:"
           echo "- Automatic WebP/AVIF conversion"
@@ -129,21 +129,21 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        cache-dependency-path: 'frontend/package-lock.json'
+        cache-dependency-path: 'apenas site/package-lock.json'
         
     - name: 📦 Install Dependencies
-      working-directory: ./frontend
+      working-directory: ./apenas site
       run: npm ci
       
     - name: 🏗️ Build with Bundle Analysis
-      working-directory: ./frontend
+      working-directory: ./apenas site
       run: |
         ANALYZE=true npm run build
       env:
         NODE_ENV: production
         
     - name: 📊 Check Bundle Size Budget
-      working-directory: ./frontend
+      working-directory: ./apenas site
       run: |
         echo "🔍 Checking bundle size budget..."
         
@@ -153,31 +153,25 @@ jobs:
           exit 1
         fi
         
-                # Tamanho total do bundle (todos arquivos em .next/static), em bytes
+        # Calcular tamanho total do bundle
         bundle_size=$(du -sb .next/static | cut -f1)
         bundle_size_kb=$((bundle_size / 1024))
         
-        echo "Bundle size: ${bundle_size}B (${bundle_size_kb}KB)"
+        # Budget: 500KB para bundles iniciais
+        budget_kb=500
         
-        AGGRESSIVE_TARGET=512000   # 512 KB (warning apenas)
-        HARD_LIMIT=1048576         # 1 MB  (hard limit)
-        CURRENT_BRANCH="${GITHUB_REF_NAME:-unknown}"
+        echo "Bundle size: ${bundle_size_kb}KB"
+        echo "Budget: ${budget_kb}KB"
         
-        if [ "$bundle_size" -gt "$AGGRESSIVE_TARGET" ]; then
-          echo "⚠️  WARNING: Bundle size ${bundle_size}B > aggressive target ${AGGRESSIVE_TARGET}B (512KB)"
+        if [ $bundle_size_kb -gt $budget_kb ]; then
+          echo "❌ BUNDLE SIZE EXCEEDED: ${bundle_size_kb}KB > ${budget_kb}KB"
+          echo "Consider:"
+          echo "- Lazy loading components with next/dynamic"
+          echo "- Code splitting by routes"
+          echo "- Tree shaking unused dependencies"
+          exit 1
         else
-          echo "✅ Bundle size within aggressive target (${bundle_size}B <= ${AGGRESSIVE_TARGET}B)"
-        fi
-        
-        if [ "$bundle_size" -gt "$HARD_LIMIT" ]; then
-          if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
-            echo "❌ BUNDLE SIZE EXCEEDED HARD LIMIT on main/master: ${bundle_size}B > ${HARD_LIMIT}B (~1MB)"
-            exit 1
-          else
-            echo "⚠️  WARNING: Bundle size ${bundle_size}B exceeds hard limit ${HARD_LIMIT}B on branch ${CURRENT_BRANCH}, but build will not fail on non-main branches."
-          fi
-        else
-          echo "✅ Bundle size within hard limit: ${bundle_size}B <= ${HARD_LIMIT}B"
+          echo "✅ Bundle size within budget: ${bundle_size_kb}KB <= ${budget_kb}KB"
         fi
 
   # Job 3: Integration Tests
@@ -185,11 +179,11 @@ jobs:
     name: 🔌 Integration Tests
     runs-on: ubuntu-latest
     
-    # services:
-    #   # Setup para FastAPI se necessário
-    #   # backend:
-    #   #   image: python:3.11
-    #   #   options: --health-cmd "curl -f http://localhost:8000/health || exit 1"
+    services:
+      # Setup para FastAPI se necessário
+      # backend:
+      #   image: python:3.11
+      #   options: --health-cmd "curl -f http://localhost:8000/health || exit 1"
     
     steps:
     - name: 📂 Checkout Code
@@ -205,7 +199,7 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        cache-dependency-path: 'frontend/package-lock.json'
+        cache-dependency-path: 'apenas site/package-lock.json'
         
     - name: 📦 Install All Dependencies
       run: |
@@ -215,18 +209,18 @@ jobs:
         pip install requests
         
         # Node.js
-        cd frontend
+        cd "apenas site"
         npm ci
         
     - name: 🚀 Start Backend (Background)
       run: |
-        python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+        python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 &
         echo $! > backend.pid
         
         # Wait for backend to be ready
         echo "⏳ Waiting for backend..."
         for i in {1..30}; do
-          if curl -s http://localhost:8000/data/status > /dev/null; then
+          if curl -s http://localhost:8000/api/data/status > /dev/null; then
             echo "✅ Backend ready"
             break
           fi
@@ -234,7 +228,7 @@ jobs:
         done
         
     - name: 🌐 Start Frontend (Background)
-      working-directory: ./frontend
+      working-directory: ./apenas site
       run: |
         npm run dev &
         echo $! > frontend.pid
@@ -260,7 +254,6 @@ jobs:
         if [ -f backend.pid ]; then
           kill $(cat backend.pid) || true
         fi
-        if [ -f "frontend/frontend.pid" ]; then
-          kill $(cat "frontend/frontend.pid") || true
+        if [ -f "apenas site/frontend.pid" ]; then
+          kill $(cat "apenas site/frontend.pid") || true
         fi
-
