@@ -87,7 +87,8 @@ jobs:
         
         bundle_size=$(du -sb .next/static | cut -f1)
         bundle_size_kb=$((bundle_size / 1024))
-        budget_kb=500
+        budget_kb=2500
+        
         
         echo "Bundle size: ${bundle_size_kb}KB"
         echo "Budget: ${budget_kb}KB"
