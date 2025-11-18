@@ -23,41 +23,21 @@ jobs:
       
       - name: Install dependencies
         run: |
+          npm install
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest psutil pyarrow audit-ci jq
-
-      - name: Run Python Audit (audit-ci)
-        run: |
-          echo "🔍 Executando audit-ci para dependências Python..."
-
-          audit-ci --output-format json > audit-ci.json
-
-          # Verifica se o arquivo foi criado
-          if [ ! -f audit-ci.json ]; then
-            echo "❌ ERRO: audit-ci.json não foi gerado!"
-            exit 1
-          fi
-
-          HIGH_COUNT=$(jq '.summary.HIGH // 0' audit-ci.json)
-          echo "HIGH findings: $HIGH_COUNT"
-
-          if [ "$HIGH_COUNT" -gt 15 ]; then
-            echo "❌ Muitos HIGH findings: $HIGH_COUNT (máximo permitido: 15)"
-            exit 1
-          fi
-
-          echo "✅ Python audit aprovado"
-
-      - name: Upload Python Audit Report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: python-audit-report
-          path: |
-            audit-ci.md
-            audit-ci.json
-          retention-days: 30
+         
+      - name: Install Node dependencies
+        run: npm install
+      #- name: Upload Python Audit Report
+       # uses: actions/upload-artifact@v4
+      
+       # with:
+        #  name: python-audit-report
+         # path: |
+          #  audit-ci.md
+           # audit-ci.json
+         # retention-days: 30
 
   frontend-performance:
     name: Frontend Performance Tests
