@@ -25,19 +25,30 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest psutil pyarrow
-      
-          
-          
-          HIGH_COUNT=$(jq '.summary.HIGH // 0' audit-ci.json)
-          echo "HIGH findings: $HIGH_COUNT"
-          if [ "$HIGH_COUNT" -gt 15 ]; then
-            echo "❌ Too many HIGH findings: $HIGH_COUNT (max: 15)"
+          pip install pytest psutil pyarrow audit-ci jq
+
+      - name: Run Python Audit (audit-ci)
+        run: |
+          echo "🔍 Executando audit-ci para dependências Python..."
+
+          audit-ci --output-format json > audit-ci.json
+
+          # Verifica se o arquivo foi criado
+          if [ ! -f audit-ci.json ]; then
+            echo "❌ ERRO: audit-ci.json não foi gerado!"
             exit 1
           fi
-          
-          echo "✅ Python audit passed: $HIGH_COUNT HIGH findings"
-      
+
+          HIGH_COUNT=$(jq '.summary.HIGH // 0' audit-ci.json)
+          echo "HIGH findings: $HIGH_COUNT"
+
+          if [ "$HIGH_COUNT" -gt 15 ]; then
+            echo "❌ Muitos HIGH findings: $HIGH_COUNT (máximo permitido: 15)"
+            exit 1
+          fi
+
+          echo "✅ Python audit aprovado"
+
       - name: Upload Python Audit Report
         uses: actions/upload-artifact@v4
         if: always()
@@ -61,14 +72,14 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: 'frontend/package-lock.json'  # ✅ CORRIGIDO
+          cache-dependency-path: 'frontend/package-lock.json'
       
       - name: Install dependencies
-        working-directory: ./frontend  # ✅ CORRIGIDO
+        working-directory: ./frontend
         run: npm ci
       
       - name: Build & Analyze Bundle
-        working-directory: ./frontend  # ✅ CORRIGIDO
+        working-directory: ./frontend
         env:
           ANALYZE: 'true'
         run: |
@@ -76,7 +87,7 @@ jobs:
           
           echo "📊 Bundle Analysis Results:"
           
-          if [ -f ".next/static/chunks/pages/_app-*.js" ]; then
+          if ls .next/static/chunks/pages/_app-*.js 1> /dev/null 2>&1; then
             APP_SIZE=$(du -sb .next/static/chunks/pages/_app-*.js | awk '{print $1}')
             echo "App bundle size: ${APP_SIZE} bytes"
             

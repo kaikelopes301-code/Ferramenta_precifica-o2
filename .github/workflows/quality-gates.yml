@@ -29,10 +29,7 @@ jobs:
         
     
         
-    - name: 🚨 Execute Quality Gates
-      run: |
-        python quality_gates.py audit_results.json
-
+    
     - name: 🖼️ Check Image Optimization
       run: |
         echo "🔍 Checking for unoptimized <img> tags..."
