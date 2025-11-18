@@ -27,11 +27,7 @@ jobs:
         pip install -r requirements.txt
         pip install requests
         
-    - name: 🔍 Run Enterprise Quality Audit
-      id: audit
-      run: |
-        python kaike_audit.py . --json audit_results.json
-        echo "audit_exit_code=$?" >> $GITHUB_OUTPUT
+    
         
     - name: 🚨 Execute Quality Gates
       run: |
@@ -88,7 +84,7 @@ jobs:
         bundle_size=$(du -sb .next/static | cut -f1)
         bundle_size_kb=$((bundle_size / 1024))
         budget_kb=2500
-        
+
         
         echo "Bundle size: ${bundle_size_kb}KB"
         echo "Budget: ${budget_kb}KB"

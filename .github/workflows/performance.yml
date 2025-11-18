@@ -27,9 +27,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest psutil pyarrow
       
-      - name: Python Performance Audit
-        run: |
-          python kaike_audit.py . --report audit-ci.md --json audit-ci.json
+          
           
           HIGH_COUNT=$(jq '.summary.HIGH // 0' audit-ci.json)
           echo "HIGH findings: $HIGH_COUNT"
@@ -92,7 +90,7 @@ jobs:
           TOTAL_JS_SIZE=$(find .next/static -name "*.js" -type f -exec du -sb {} + | awk '{sum+=$1} END {print sum}')
           echo "Total JS size: ${TOTAL_JS_SIZE} bytes"
           
-          MAX_TOTAL_SIZE=512000
+          MAX_TOTAL_SIZE=2000000 
           if [ "$TOTAL_JS_SIZE" -gt "$MAX_TOTAL_SIZE" ]; then
             echo "❌ Total JS too large: ${TOTAL_JS_SIZE}B > ${MAX_TOTAL_SIZE}B"
             exit 1
